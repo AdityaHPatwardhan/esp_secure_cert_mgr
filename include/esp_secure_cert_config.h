@@ -31,52 +31,48 @@
 #define ESP_SECURE_CERT_IV                  "iv"
 
 #elif CONFIG_ESP_SECURE_CERT_CUST_FLASH_PARTITION
-#define ESP_SECURE_CERT_METADATA_SIZE                  64     /* 32 bytes are reserved for the metadata (Must be a multiple of 32)*/
-
-#define ESP_SECURE_CERT_DEV_CERT_SIZE                  2048
-#define ESP_SECURE_CERT_CA_CERT_SIZE                   4096
-#ifndef CONFIG_ESP_SECURE_CERT_DS_PERIPHERAL
-#define ESP_SECURE_CERT_PRIV_KEY_SIZE                  4096
-#else
-#define ESP_SECURE_CERT_CIPHERTEXT_SIZE                (ESP_DS_C_LEN + 16)
-#define ESP_SECURE_CERT_IV_SIZE                        (ESP_DS_IV_LEN + 16)
-#endif
-
-#define ESP_SECURE_CERT_METADATA_OFFSET                0           /* 32 bytes are reserved for the metadata (Must be a multiple of 32)*/
-#define ESP_SECURE_CERT_DEV_CERT_OFFSET                (ESP_SECURE_CERT_METADATA_OFFSET + ESP_SECURE_CERT_METADATA_SIZE)
-#define ESP_SECURE_CERT_CA_CERT_OFFSET                 (ESP_SECURE_CERT_DEV_CERT_OFFSET + ESP_SECURE_CERT_DEV_CERT_SIZE)
-#ifndef CONFIG_ESP_SECURE_CERT_DS_PERIPHERAL
-#define ESP_SECURE_CERT_PRIV_KEY_OFFSET                (ESP_SECURE_CERT_CA_CERT_OFFSET + ESP_SECURE_CERT_CA_CERT_SIZE)
-#define ESP_SECURE_CERT_MAX_SIZE                       (ESP_SECURE_CERT_PRIV_KEY_OFFSET + ESP_SECURE_CERT_PRIV_KEY_SIZE)
-#else
-#define ESP_SECURE_CERT_CIPHERTEXT_OFFSET              (ESP_SECURE_CERT_CA_CERT_OFFSET + ESP_SECURE_CERT_CA_CERT_SIZE)
-#define ESP_SECURE_CERT_IV_OFFSET                      (ESP_SECURE_CERT_CIPHERTEXT_OFFSET + ESP_SECURE_CERT_CIPHERTEXT_SIZE)
-#define ESP_SECURE_CERT_MAX_SIZE                       (ESP_SECURE_CERT_IV_OFFSET + ESP_SECURE_CERT_IV_SIZE)
-#endif
 
 #define ESP_SECURE_CERT_PARTITION_TYPE          0x3F        /* Custom partition type */
-#define ESP_SECURE_CERT_PARTITION_NAME          CONFIG_ESP_SECURE_CERT_PARTITION_NAME  /* Name of the custom pre prov partition */
+#define ESP_SECURE_CERT_PARTITION_NAME          CONFIG_ESP_SECURE_CERT_PARTITION_NAME  /* Name of the custom esp_secure_cert partition */
 #define ESP_SECURE_CERT_METADATA_MAGIC_WORD     0x12345678
 
+#define ESP_SECURE_CERT_METADATA_OFFSET         0
+#define ESP_SECURE_CERT_METADATA_SIZE           16
+#define ESP_SECURE_CERT_TABLE_MAX_ENTRIES       25
+#define ESP_SECURE_CERT_TABLE_OFFSET + ESP_SECURE_CERT_HEADER_SIZE
+#define ESP_SECURE_CERT_TABLE_MAX_SIZE          256
+#define ESP_SECURE_CERT_DATA_OFFSET ESP_SECURE_CERT_TABLE_OFFSET + ESP_SECURE_CERT_TABLE_MAX_SIZE
+
+enum esp_secure_cert_type {
+    ESP_SECURE_CERT_INVALID_TYPE = -1;
+    ESP_SECURE_CERT_CA_CERT,
+    ESP_SECURE_CERT_DEV_CERT,
+    ESP_SECURE_CERT_PRIV_KEY,
+    ESP_SECURE_CERT_DS_CONTEXT,
+    ESP_SECURE_CERT_UNKNOWN,
+} esp_secure_cert_type_t;
+
+esp_secure_cert_tlv_t {
+    esp_secure_cert_type_t type;        /* Type of data */
+    uint8_t length;                     /* Length of data in bytes */
+    uint8_t *value;                     /* actual data in form of byte array */
+}
 
 typedef struct {
-    uint32_t dev_cert_crc;                          /* CRC of the dev cert data */
-    uint16_t dev_cert_len;                          /* The actual length of the device cert */
-    uint32_t ca_cert_crc;                           /* CRC of the ca cert data */
-    uint16_t ca_cert_len;                           /* The actual length of the ca cert [The length before the 32 byte alignment] */
-#ifndef CONFIG_ESP_SECURE_CERT_DS_PERIPHERAL
-    uint32_t priv_key_crc;                          /* CRC of the priv key data */
-    uint16_t priv_key_len;                          /* The actual length of the private key */
-#else
-    uint32_t ciphertext_crc;                        /* CRC of the ciphertext data */
-    uint16_t ciphertext_len;                        /* The actual length of the ciphertext */
-    uint32_t iv_crc;                                /* CRC of the iv data */
-    uint16_t iv_len;                                /* The actual length of iv*/
-    uint16_t rsa_length;                            /* Length of the RSA private key that is encrypted as ciphertext */
-    uint8_t  efuse_key_id;                          /* The efuse key block id which holds the HMAC key used to encrypt the ciphertext */
+    uint8_t magic;
+    esp_secure_cert_type_t type; /* type of the data */
+    uint8_t length; /* length of the data */
+    uint8_t offset; /* offset of the data from the base of esp_secure_cert partition */
+} esp_secure_cert_info_t;
+
+typedef struct {
+    uint8_t magic_word;         /* Magic word */
+    uint8_t segment_count;      /* Count of segments */
+    uint32_t addr;              /* Start of the data stored in tlv format*/
+    bool table_updated;         /* Status of table containing info about tlv data segments */
+} __attribute__((packed))  esp_secure_cert_metadata_t;
 #endif
-    uint32_t magic_word;                            /* The magic word which shall identify the valid metadata when read from flash */
-} esp_secure_cert_metadata;
+
 
 #else
 #error "Invalid type of partition selected"
