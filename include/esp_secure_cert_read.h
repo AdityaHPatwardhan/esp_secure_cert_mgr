@@ -174,39 +174,7 @@ esp_err_t esp_secure_cert_get_ca_cert_addr(const void **buffer, uint32_t *len);
  *                  On failure
  */
 esp_err_t esp_secure_cert_get_priv_key_addr(const void **buffer, uint32_t *len);
-#else /* !CONFIG_MFG_WRITE_TO_FLASH */
-
-/* @info
- *       This function returns the flash address of initialization vector
- *       The address is mapped to memory.
- *
- * @params
- *      - buffer    This value shall be filled with the initialization vector
- *                      on successfull completion
- *      - len       This value shall be filled with the length of the initialization vector
- * @return
- *      - ESP_OK    On success
- *      - ESP_FAIL/other relevant esp error code
- *                  On failure
- */
-esp_err_t esp_secure_cert_get_iv_addr(const void **buffer, uint32_t *len);
-
-/* @info
- *       This function returns the flash address of ciphertext (encrypted private key)
- *       The address is mapped to memory.
- *
- * @params
- *      - buffer    This value shall be filled with the private key ciphertext
- *                      on successfull completion
- *      - len       This value shall be filled with the length of the ciphertext
- * @return
- *      - ESP_OK    On success
- *      - ESP_FAIL/other relevant esp error code
- *                  On failure
- */
-esp_err_t esp_secure_cert_get_ciphertext_addr(const void **buffer, uint32_t *len);
-
-#endif /* CONFIG_ESP_SECURE_CERT_DS_PERIPHERAL */
+#endif /* !CONFIG_ESP_SECURE_CERT_DS_PERIPHERAL */
 #endif /* CONFIG_ESP_SECURE_CERT_CUST_FLASH_PARTITION */
 
 #ifdef CONFIG_ESP_SECURE_CERT_DS_PERIPHERAL

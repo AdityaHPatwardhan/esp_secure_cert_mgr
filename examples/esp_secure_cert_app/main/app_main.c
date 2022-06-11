@@ -218,28 +218,15 @@ void app_main()
         ESP_LOGE(TAG, "Failed to obtain flash address of private_key");
     }
 #else
-    esp_ret = esp_secure_cert_get_ciphertext_addr(&addr, &len);
-    if (esp_ret == ESP_OK) {
-        ESP_LOGI(TAG, "Successfuly obtained ciphertext, ciphertext length is %d", len);
-        ESP_LOGD(TAG, "ciphertext:");
-        ESP_LOG_BUFFER_HEX_LEVEL(TAG, addr, len, ESP_LOG_DEBUG);
-    } else {
-        ESP_LOGE(TAG, "Failed to obtain flash address of ciphertext");
-    }
-
-    esp_ret = esp_secure_cert_get_iv_addr(&addr, &len);
-    if (esp_ret == ESP_OK) {
-        ESP_LOGI(TAG, "Successfuly obtained iv, iv length is %d", len);
-        ESP_LOGD(TAG, "iv:");
-        ESP_LOG_BUFFER_HEX_LEVEL(TAG, addr, len, ESP_LOG_DEBUG);
-    } else {
-        ESP_LOGE(TAG, "Failed to obtain flash address of iv");
-    }
-
     esp_ds_data_ctx_t *ds_data = NULL;
     ds_data = esp_secure_cert_get_ds_ctx();
     if (ds_data != NULL) {
         ESP_LOGI(TAG, "Successfully obtained the ds context");
+        ESP_LOGD(TAG, "ciphertext:");
+        ESP_LOG_BUFFER_HEX_LEVEL(TAG, ds_data->esp_ds_data->c, ESP_DS_C_LEN, ESP_LOG_DEBUG);
+
+        ESP_LOGI(TAG, "Successfuly obtained iv", len);
+        ESP_LOG_BUFFER_HEX_LEVEL(TAG, ds_data->esp_ds_data->iv, ESP_DS_IV_BIT_LEN/8, ESP_LOG_DEBUG);
         ESP_LOGI(TAG, "The value of rsa length is %d", ds_data->rsa_length_bits);
         ESP_LOGI(TAG, "The value of efuse key id is %d", ds_data->efuse_key_id);
     } else {
