@@ -486,7 +486,6 @@ def configure_efuse_key_block(args, idf_target):
             # on host then burn_key operation was successfull
             new_efuse_summary_json = get_efuse_summary_json(args, idf_target)
             hmac_key_read = new_efuse_summary_json[key_blk]['value']
-            print(hmac_key_read)
             hmac_key_read = bytes.fromhex(hmac_key_read)
             if new_hmac_key == hmac_key_read:
                 print('Key was successfully written to the efuse '
