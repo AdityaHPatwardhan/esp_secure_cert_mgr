@@ -34,7 +34,7 @@
 
 #define ESP_SECURE_CERT_PARTITION_TYPE          0x3F        /* Custom partition type */
 #define ESP_SECURE_CERT_PARTITION_NAME          CONFIG_ESP_SECURE_CERT_PARTITION_NAME  /* Name of the custom esp_secure_cert partition */
-#define ESP_SECURE_CERT_MAGIC                   0x12345678
+#define ESP_SECURE_CERT_MAGIC                   0xFEEDBABE
 #define ESP_SECURE_CERT_PARTITION_SIZE          0x6000
 #define ESP_SECURE_CERT_DATA_OFFSET             0
 
@@ -46,7 +46,7 @@ typedef enum esp_secure_cert_type {
     ESP_SECURE_CERT_PRIV_KEY,
     ESP_SECURE_CERT_DS_DATA,
     ESP_SECURE_CERT_DS_CONTEXT,
-    ESP_SECURE_CERT_UNKNOWN,
+    ESP_SECURE_CERT_TLV_END,
 } esp_secure_cert_tlv_type_t;
 
 typedef struct esp_secure_cert_tlv_header {

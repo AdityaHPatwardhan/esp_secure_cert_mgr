@@ -11,9 +11,10 @@
 #include "esp_crc.h"
 #include "esp_secure_cert_config.h"
 #include "esp_secure_cert_read.h"
+#include "esp_secure_cert_private.h"
 #include "nvs_flash.h"
 
-#define TAG "esp_secure_cert"
+static const char *TAG = "esp_secure_cert";
 
 #ifdef CONFIG_ESP_SECURE_CERT_NVS_PARTITION
 
@@ -109,8 +110,9 @@ esp_err_t esp_secure_cert_init_nvs_partition()
  * The mapping is done only once and function shall
  * simply return same address in case of successive calls.
  **/
-static const void* esp_secure_cert_get_mapped_addr()
+const void* esp_secure_cert_get_mapped_addr()
 {
+    // Once initialized, these variable shall contain valid data till reboot.
     static bool esp_secure_cert_is_mapped;
     static const void *buf;
     if (!esp_secure_cert_is_mapped) {
@@ -153,34 +155,37 @@ static const void* esp_secure_cert_get_mapped_addr()
  * tlv_address              Void pointer to store tlv address
  *
  */
-static esp_err_t esp_secure_cert_find_tlv(const void *esp_secure_cert_addr, esp_secure_cert_tlv_type_t type, void **tlv_address)
+esp_err_t esp_secure_cert_find_tlv(const void *esp_secure_cert_addr, esp_secure_cert_tlv_type_t type, void **tlv_address)
 {
     uint16_t tlv_offset = ESP_SECURE_CERT_DATA_OFFSET;
-    uint32_t prev_crc = UINT32_MAX;
     while (1) {
         esp_secure_cert_tlv_header_t *tlv_header = (esp_secure_cert_tlv_header_t *)esp_secure_cert_addr + tlv_offset;
         if (tlv_header->magic != ESP_SECURE_CERT_MAGIC) {
+            if (type == ESP_SECURE_CERT_TLV_END) {
+                /* The invalid magic means last tlv read successfully was the last tlv structure present,
+                 * so send the end address of the tlv.
+                 * This address can be used to add a new tlv structure. */
+                *tlv_address = (void*) tlv_header;
+                return ESP_OK;
+            }
             ESP_LOGE(TAG, "Unable to find data of type: %d", type);
             return ESP_FAIL;
         }
-        uint8_t *data_addr = tlv_header->value;
-        uint16_t  data_len = tlv_header->length;
-        esp_secure_cert_tlv_footer_t *tlv_footer = (esp_secure_cert_tlv_footer_t *)(esp_secure_cert_addr + sizeof(esp_secure_cert_tlv_header_t) + tlv_header->length + tlv_offset);
+        size_t crc_data_len = sizeof(esp_secure_cert_tlv_header_t) + tlv_header->length;
 
         if (tlv_header->type == type) {
             *tlv_address = (void*) tlv_header;
-            uint32_t data_crc = esp_crc32_le(prev_crc, (const uint8_t * )data_addr, data_len);
+            uint32_t data_crc = esp_crc32_le(UINT32_MAX, (const uint8_t * )tlv_header, crc_data_len);
+            esp_secure_cert_tlv_footer_t *tlv_footer = (esp_secure_cert_tlv_footer_t *)(esp_secure_cert_addr + crc_data_len + tlv_offset);
             if (tlv_footer->crc != data_crc) {
                 ESP_LOGE(TAG, "calculated crc = %08X does not match with crc"
                         "read from esp_secure_cert partition = %08X", data_crc, tlv_footer->crc);
                 return ESP_FAIL;
             }
-            ESP_LOGD(TAG, "prev_crc: %08X, calculated crc:%08X", prev_crc, data_crc);
             ESP_LOGD(TAG, "tlv structure of type %d found and verified");
             return ESP_OK;
         } else {
-            prev_crc = tlv_footer->crc;
-            tlv_offset = tlv_offset + sizeof(esp_secure_cert_tlv_header_t) + tlv_header->length + sizeof(esp_secure_cert_tlv_footer_t);
+            tlv_offset = crc_data_len + sizeof(esp_secure_cert_tlv_footer_t);
         }
     }
 }
