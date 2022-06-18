@@ -35,24 +35,28 @@
 #define ESP_SECURE_CERT_PARTITION_TYPE          0x3F        /* Custom partition type */
 #define ESP_SECURE_CERT_PARTITION_NAME          CONFIG_ESP_SECURE_CERT_PARTITION_NAME  /* Name of the custom esp_secure_cert partition */
 #define ESP_SECURE_CERT_MAGIC                   0xFEEDBABE
-#define ESP_SECURE_CERT_PARTITION_SIZE          0x6000
+#define ESP_SECURE_CERT_PARTITION_SIZE          0x4000
 #define ESP_SECURE_CERT_DATA_OFFSET             0
 
 /* secure cert partition is of 12 KB size out of which 6-7 KB are utilized stored parameters, the additional space is reserved for future use */
 typedef enum esp_secure_cert_type {
-    ESP_SECURE_CERT_INVALID_TYPE = -1,
-    ESP_SECURE_CERT_CA_CERT,
+    ESP_SECURE_CERT_CA_CERT = 0,
     ESP_SECURE_CERT_DEV_CERT,
     ESP_SECURE_CERT_PRIV_KEY,
     ESP_SECURE_CERT_DS_DATA,
     ESP_SECURE_CERT_DS_CONTEXT,
     ESP_SECURE_CERT_TLV_END,
+    //Custom data types
+    //that can be defined by the user
+    ESP_SECURE_CERT_USER_DATA_1,
+    ESP_SECURE_CERT_USER_DATA_2,
+    ESP_SECURE_CERT_USER_DATA_3,
 } esp_secure_cert_tlv_type_t;
 
 typedef struct esp_secure_cert_tlv_header {
+    uint32_t magic;
     uint8_t type;                       /* Type of tlv structure, this shall be typecasted
                                            to esp_secure_cert_tlv_type_t for further use */
-    uint32_t magic;
     uint16_t length;                    /* Length of the data */
     uint8_t value[0];                   /* Actual data in form of byte array */
 } __attribute__((packed)) esp_secure_cert_tlv_header_t;

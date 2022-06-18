@@ -110,7 +110,7 @@ esp_err_t esp_secure_cert_init_nvs_partition()
  * The mapping is done only once and function shall
  * simply return same address in case of successive calls.
  **/
-const void* esp_secure_cert_get_mapped_addr()
+const void *esp_secure_cert_get_mapped_addr()
 {
     // Once initialized, these variable shall contain valid data till reboot.
     static bool esp_secure_cert_is_mapped;
@@ -118,7 +118,7 @@ const void* esp_secure_cert_get_mapped_addr()
     if (!esp_secure_cert_is_mapped) {
 
         esp_partition_iterator_t it = esp_partition_find(ESP_SECURE_CERT_PARTITION_TYPE,
-                ESP_PARTITION_SUBTYPE_ANY, ESP_SECURE_CERT_PARTITION_NAME);
+                                      ESP_PARTITION_SUBTYPE_ANY, ESP_SECURE_CERT_PARTITION_NAME);
         if (it == NULL) {
             ESP_LOGE(TAG, "Partition not found.");
             return NULL;
@@ -159,32 +159,34 @@ esp_err_t esp_secure_cert_find_tlv(const void *esp_secure_cert_addr, esp_secure_
 {
     uint16_t tlv_offset = ESP_SECURE_CERT_DATA_OFFSET;
     while (1) {
-        esp_secure_cert_tlv_header_t *tlv_header = (esp_secure_cert_tlv_header_t *)esp_secure_cert_addr + tlv_offset;
+        esp_secure_cert_tlv_header_t *tlv_header = (esp_secure_cert_tlv_header_t *)(esp_secure_cert_addr + tlv_offset);
+        ESP_LOGD(TAG, "Reading from offset of %d from base of esp_secure_cert", tlv_offset);
         if (tlv_header->magic != ESP_SECURE_CERT_MAGIC) {
             if (type == ESP_SECURE_CERT_TLV_END) {
                 /* The invalid magic means last tlv read successfully was the last tlv structure present,
                  * so send the end address of the tlv.
                  * This address can be used to add a new tlv structure. */
-                *tlv_address = (void*) tlv_header;
+                *tlv_address = (void *) tlv_header;
                 return ESP_OK;
             }
-            ESP_LOGE(TAG, "Unable to find data of type: %d", type);
+            ESP_LOGD(TAG, "Unable to find tlv of type: %d", type);
             return ESP_FAIL;
         }
+        // crc_data_len = header_len + data_len
         size_t crc_data_len = sizeof(esp_secure_cert_tlv_header_t) + tlv_header->length;
         if (((esp_secure_cert_tlv_type_t)tlv_header->type) == type) {
             *tlv_address = (void *) tlv_header;
             uint32_t data_crc = esp_crc32_le(UINT32_MAX, (const uint8_t * )tlv_header, crc_data_len);
             esp_secure_cert_tlv_footer_t *tlv_footer = (esp_secure_cert_tlv_footer_t *)(esp_secure_cert_addr + crc_data_len + tlv_offset);
             if (tlv_footer->crc != data_crc) {
-                ESP_LOGE(TAG, "calculated crc = %08X does not match with crc"
-                        "read from esp_secure_cert partition = %08X", data_crc, tlv_footer->crc);
+                ESP_LOGE(TAG, "Calculated crc = %08X does not match with crc"
+                         "read from esp_secure_cert partition = %08X", data_crc, tlv_footer->crc);
                 return ESP_FAIL;
             }
             ESP_LOGD(TAG, "tlv structure of type %d found and verified", type);
             return ESP_OK;
         } else {
-            tlv_offset = crc_data_len + sizeof(esp_secure_cert_tlv_footer_t);
+            tlv_offset = tlv_offset + crc_data_len + sizeof(esp_secure_cert_tlv_footer_t);
         }
     }
 }
@@ -193,10 +195,15 @@ esp_err_t esp_secure_cert_get_addr(esp_secure_cert_tlv_type_t type, const void *
 {
     esp_err_t err;
     const void *esp_secure_cert_addr = esp_secure_cert_get_mapped_addr();
+    if (esp_secure_cert_addr == NULL) {
+        ESP_LOGE(TAG, "Error in obtaining esp_secure_cert memory mapped address");
+        return ESP_FAIL;
+    }
     void *tlv_address;
     err = esp_secure_cert_find_tlv(esp_secure_cert_addr, type, &tlv_address);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Could not find the tlv of type %d", type);
+        return err;
     }
     esp_secure_cert_tlv_header_t *tlv_header = (esp_secure_cert_tlv_header_t *) tlv_address;
     *buffer = &tlv_header->value;
@@ -256,7 +263,7 @@ esp_ds_data_ctx_t *esp_secure_cert_get_ds_ctx()
     esp_err_t esp_ret;
     esp_ds_data_ctx_t *ds_data_ctx;
 
-    ds_data_ctx = (esp_ds_data_ctx_t *)malloc(sizeof(esp_ds_data_ctx_t));
+    ds_data_ctx = (esp_ds_data_ctx_t *)calloc(1, sizeof(esp_ds_data_ctx_t));
     if (ds_data_ctx == NULL) {
         ESP_LOGE(TAG, "Error in allocating memory for esp_ds_data_context");
         goto exit;
@@ -298,18 +305,18 @@ esp_ds_data_ctx_t *esp_secure_cert_get_ds_ctx()
 #elif CONFIG_ESP_SECURE_CERT_CUST_FLASH_PARTITION
     uint32_t len;
     esp_ds_data_t *esp_ds_data;
-    esp_ret = esp_secure_cert_get_addr(ESP_SECURE_CERT_DS_DATA, (void*) &esp_ds_data, &len);
+    esp_ret = esp_secure_cert_get_addr(ESP_SECURE_CERT_DS_DATA, (void *) &esp_ds_data, &len);
     if (esp_ret != ESP_OK) {
-        ESP_LOGE(TAG, "Error in reading ds_context");
+        ESP_LOGE(TAG, "Error in reading ds_data, returned %04X", esp_ret);
         goto exit;
     }
 
     esp_ds_data_ctx_t *ds_data_ctx_flash;
-    esp_ret = esp_secure_cert_get_addr(ESP_SECURE_CERT_DS_CONTEXT, (void*) &ds_data_ctx_flash, &len);
-    memcpy(ds_data_ctx_flash, ds_data_ctx, len);
+    esp_ret = esp_secure_cert_get_addr(ESP_SECURE_CERT_DS_CONTEXT, (void *) &ds_data_ctx_flash, &len);
+    memcpy(ds_data_ctx, ds_data_ctx_flash, len);
     ds_data_ctx->esp_ds_data = esp_ds_data;
     if (esp_ret != ESP_OK) {
-        ESP_LOGE(TAG, "Error in reading ds_context");
+        ESP_LOGE(TAG, "Error in reading ds_context, returned %04X", esp_ret);
         goto exit;
     }
     return ds_data_ctx;
