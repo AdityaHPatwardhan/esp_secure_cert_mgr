@@ -29,8 +29,8 @@ static const char *TAG = "esp_secure_cert_write";
 static esp_err_t esp_secure_cert_write_to_flash(size_t offset, unsigned char *data_buf, size_t data_len)
 {
     assert(data_buf);
-    ESP_LOGD(TAG, "the data of length %d bytes shall be flashed at an offset of %d"
-            "from the base address of esp_secure_cert partition", data_len, offset);
+    ESP_LOGI(TAG, "the data of length %d bytes shall be flashed at an offset of %d"
+             "from the base address of esp_secure_cert partition", data_len, offset);
 
     esp_partition_iterator_t it = esp_partition_find(ESP_SECURE_CERT_PARTITION_TYPE, ESP_PARTITION_SUBTYPE_ANY, ESP_SECURE_CERT_PARTITION_NAME);
     if (it == NULL) {
@@ -85,9 +85,11 @@ esp_err_t esp_secure_cert_prepare_tlv(esp_secure_cert_tlv_type_t type, const uns
     data_len = data_len + value_len;
     uint32_t crc_data = 0;
     crc_data = esp_crc32_le(UINT32_MAX, (const uint8_t * )output_buf, data_len);
+    ESP_LOGD(TAG, "Total data length (header + data) = %d, crc = %08X", data_len, crc_data);
     esp_secure_cert_tlv_footer_t tlv_footer;
     tlv_footer.crc = crc_data;
     memcpy(output_buf + data_len, &tlv_footer, sizeof(esp_secure_cert_tlv_footer_t));
+    data_len = data_len + sizeof(esp_secure_cert_tlv_footer_t);
     *output_len = data_len;
     return ESP_OK;
 }
@@ -125,7 +127,7 @@ esp_err_t esp_secure_cert_write(esp_secure_cert_tlv_type_t type, const unsigned 
     esp_secure_cert_prepare_tlv(type, data, data_len, output_buf, &output_len);
     // output_buf should now contain the required tlv structrure that needs to be written to the flash
     // This buffer shall now be written at tlv_end_offset
-    ESP_LOGI(TAG, "the end address of last tlv structure is %d", tlv_end_offset);
+    ESP_LOGI(TAG, "Writing data at %d offset from base of esp_secure_cert partition, (end of last tlv)", tlv_end_offset);
     err = esp_secure_cert_write_to_flash(tlv_end_offset, output_buf, output_len);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to write the tlv of type %d to flash, returned %02X", type, err);
