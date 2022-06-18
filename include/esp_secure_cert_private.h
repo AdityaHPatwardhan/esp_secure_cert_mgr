@@ -30,4 +30,4 @@ esp_err_t esp_secure_cert_find_tlv(const void *esp_secure_cert_addr, esp_secure_
  * The mapping is done only once and function shall
  * simply return same address in case of successive calls.
  **/
-const void* esp_secure_cert_get_mapped_addr();
+const void *esp_secure_cert_get_mapped_addr();

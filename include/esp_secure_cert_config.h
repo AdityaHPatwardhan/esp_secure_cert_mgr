@@ -35,18 +35,26 @@
 #define ESP_SECURE_CERT_PARTITION_TYPE          0x3F        /* Custom partition type */
 #define ESP_SECURE_CERT_PARTITION_NAME          CONFIG_ESP_SECURE_CERT_PARTITION_NAME  /* Name of the custom esp_secure_cert partition */
 #define ESP_SECURE_CERT_MAGIC                   0xFEEDBABE
+#ifdef CONFIG_IDF_TARGET_ESP32
+#define ESP_SECURE_CERT_PARTITION_SIZE          0x3000
+#else
 #define ESP_SECURE_CERT_PARTITION_SIZE          0x6000
+#endif
 #define ESP_SECURE_CERT_DATA_OFFSET             0
 
 /* secure cert partition is of 12 KB size out of which 6-7 KB are utilized stored parameters, the additional space is reserved for future use */
 typedef enum esp_secure_cert_type {
-    ESP_SECURE_CERT_INVALID_TYPE = -1,
-    ESP_SECURE_CERT_CA_CERT,
+    ESP_SECURE_CERT_CA_CERT = 0,
     ESP_SECURE_CERT_DEV_CERT,
     ESP_SECURE_CERT_PRIV_KEY,
     ESP_SECURE_CERT_DS_DATA,
     ESP_SECURE_CERT_DS_CONTEXT,
     ESP_SECURE_CERT_TLV_END,
+    //Custom data types
+    //that can be defined by the user
+    ESP_SECURE_CERT_USER_DATA_1,
+    ESP_SECURE_CERT_USER_DATA_2,
+    ESP_SECURE_CERT_USER_DATA_3,
 } esp_secure_cert_tlv_type_t;
 
 typedef struct esp_secure_cert_tlv_header {
