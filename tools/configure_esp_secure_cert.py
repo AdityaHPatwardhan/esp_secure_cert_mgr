@@ -32,14 +32,14 @@ except ImportError:
 # Check python version is proper or not to avoid script failure
 assert sys.version_info >= (3, 6, 0), 'Python version too low.'
 
-esp_ds_data_dir = 'esp_ds_data'
+esp_secure_cert_data_dir = 'esp_secure_cert_data'
 # hmac_key_file is generated when HMAC_KEY is calculated,
 # it is used when burning HMAC_KEY to efuse
-hmac_key_file = os.path.join(esp_ds_data_dir, 'hmac_key.bin')
+hmac_key_file = os.path.join(esp_secure_cert_data_dir, 'hmac_key.bin')
 # csv and bin filenames are default filenames
 # for nvs partition files created with this script
-csv_filename = os.path.join(esp_ds_data_dir, 'esp_secure_cert.csv')
-bin_filename = os.path.join(esp_ds_data_dir, 'esp_secure_cert.bin')
+csv_filename = os.path.join(esp_secure_cert_data_dir, 'esp_secure_cert.csv')
+bin_filename = os.path.join(esp_secure_cert_data_dir, 'esp_secure_cert.bin')
 # Targets supported by the script
 supported_targets = {'esp32', 'esp32s2', 'esp32c3', 'esp32s3'}
 supported_key_size = {'esp32s2': [1024, 2048, 3072, 4096],
@@ -255,7 +255,7 @@ def generate_cust_flash_partition_ds(c, iv, hmac_key_id, key_size,
                                  + len(ca_cert_tlv)] = ca_cert_tlv
                 cur_offset = cur_offset + len(ca_cert_tlv)
 
-        # create esp_ds_data struct
+        # create esp_secure_cert_data struct
         ds_data = struct.pack('<i', key_size // 32 - 1)
         ds_data = ds_data + iv
         ds_data = ds_data + c
@@ -660,8 +660,8 @@ def main():
         print('ERROR: The provided client cert file does not exist')
         sys.exit(-1)
 
-    if (os.path.exists(esp_ds_data_dir) is False):
-        os.makedirs(esp_ds_data_dir)
+    if (os.path.exists(esp_secure_cert_data_dir) is False):
+        os.makedirs(esp_secure_cert_data_dir)
 
     # Provide CA cert path only if it exists
     ca_cert = None
