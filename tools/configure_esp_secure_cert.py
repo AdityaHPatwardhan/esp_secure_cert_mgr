@@ -10,13 +10,13 @@ import struct
 import subprocess
 import sys
 import zlib
+import enum
 
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.utils import int_to_bytes
-
 
 idf_path = os.getenv('IDF_PATH')
 
@@ -41,10 +41,22 @@ hmac_key_file = os.path.join(esp_ds_data_dir, 'hmac_key.bin')
 csv_filename = os.path.join(esp_ds_data_dir, 'esp_secure_cert.csv')
 bin_filename = os.path.join(esp_ds_data_dir, 'esp_secure_cert.bin')
 # Targets supported by the script
-supported_targets = {'esp32s2', 'esp32c3', 'esp32s3'}
+supported_targets = {'esp32', 'esp32s2', 'esp32c3', 'esp32s3'}
 supported_key_size = {'esp32s2': [1024, 2048, 3072, 4096],
                       'esp32c3': [1024, 2048, 3072],
                       'esp32s3': [1024, 2048, 3072, 4096]}
+
+
+class tlv_type_t(enum.IntEnum):
+    CA_CERT = 0
+    DEV_CERT = 1
+    PRIV_KEY = 2
+    DS_DATA = 3
+    DS_CONTEXT = 4
+    TLV_END = 5
+    USER_DATA_1 = 6
+    USER_DATA_2 = 7
+    USER_DATA_3 = 8
 
 
 def load_privatekey(key_file_path, password=None):
@@ -188,82 +200,87 @@ def efuse_burn_key(args, idf_target):
 ciphertext_size = {'esp32s2': 1600, 'esp32s3': 1600, 'esp32c3': 1216}
 
 
+def prepare_tlv(tlv_type, data, data_len):
+    # Add the magic at start ( unsigned int )
+    tlv_header = struct.pack('<I', 0xfeedbabe)
+    # Add the tlv type ( int )
+    tlv_header = tlv_header + struct.pack('<B', tlv_type)
+    # Add the data_length ( unsigned short )
+    tlv_header = tlv_header + struct.pack('<H', data_len)
+    tlv = tlv_header + data
+    # Add the crc value ( unsigned int )
+    # The value `0xffffffff` corresponds to the
+    # starting value used at the time of calculation
+    tlv_footer = struct.pack('<I', zlib.crc32(tlv, 0xffffffff))
+    tlv = tlv + tlv_footer
+    return tlv
+
+
 # @info
 #       This function generates the cust_flash partition of
 #       the encrypted private key parameters when DS is enabled.
 def generate_cust_flash_partition_ds(c, iv, hmac_key_id, key_size,
-                                     device_cert, ca_cert,
-                                     idf_target, op_file):
-    # Following offsets have been calculated with help of
-    # esp_secure_cert_config.h
-    METADATA_OFFSET = 0
-    DEV_CERT_OFFSET = METADATA_OFFSET + 64
-    CA_CERT_OFFSET = DEV_CERT_OFFSET + 2048
-    CIPHERTEXT_OFFSET = CA_CERT_OFFSET + 4096
-    IV_OFFSET = CIPHERTEXT_OFFSET + ciphertext_size[idf_target]
-
+                                     device_cert, ca_cert, idf_target,
+                                     op_file):
     # cust_flash partition is of size 0x6000 i.e. 24576
     with open(op_file, 'wb') as output_file:
-        output_file_data = bytearray(b'\xff' * 24576)
-        metadata = b'\x00'
+        if idf_target == 'esp32':
+            partition_size = 0x3000
+        else:
+            partition_size = 0x6000
+        output_file_data = bytearray(b'\xff' * partition_size)
+        cur_offset = 0
         with open(device_cert, 'rb') as cli_cert:
             dev_cert = cli_cert.read()
-            # Write device cert at specific address
+            # Null terminate the dev_cert.
             dev_cert = dev_cert + b'\0'
-            output_file_data[DEV_CERT_OFFSET: DEV_CERT_OFFSET
-                             + len(dev_cert)] = dev_cert
-            # The following line packs the dev_cert_crc
-            # and dev_cet_len into the metadata in little endian format
-            # The value `0xffffffff` corresponds to the
-            # starting value used at the time of calculation
-            metadata = struct.pack('<IH',
-                                   zlib.crc32(dev_cert, 0xffffffff),
-                                   len(dev_cert))
-            # Align to 32 bit, this is done to match
-            # the same operation done by the compiler
-            metadata = metadata + b'\x00' * 2
+            dev_cert_tlv = prepare_tlv(tlv_type_t.DEV_CERT,
+                                       dev_cert,
+                                       len(dev_cert))
+            print('length of tlv is {}'.format(len(dev_cert_tlv)))
+            output_file_data[cur_offset: cur_offset
+                             + len(dev_cert_tlv)] = dev_cert_tlv
+            cur_offset = cur_offset + len(dev_cert_tlv)
 
         if ca_cert is not None:
             with open(ca_cert, 'rb') as ca_cert:
                 ca_cert = ca_cert.read()
                 # Write ca cert at specific address
                 ca_cert = ca_cert + b'\0'
-                output_file_data[CA_CERT_OFFSET: CA_CERT_OFFSET
-                                 + len(ca_cert)] = ca_cert
-                metadata = metadata
-                + struct.pack('<IH',
-                              zlib.crc32(ca_cert, 0xffffffff),
-                              len(ca_cert))
-        else:
-            output_file_data[CA_CERT_OFFSET: CA_CERT_OFFSET] = b'\x00'
-            metadata = metadata + struct.pack('<IH', 0, 0)
+                ca_cert_tlv = prepare_tlv(tlv_type_t.CA_CERT,
+                                          ca_cert,
+                                          len(ca_cert))
+                print('length of tlv is {}'.format(len(ca_cert_tlv)))
+                output_file_data[cur_offset: cur_offset
+                                 + len(ca_cert_tlv)] = ca_cert_tlv
+                cur_offset = cur_offset + len(ca_cert_tlv)
 
-        # Align to 32 bit
-        metadata = metadata + b'\x00' * 2
+        # create esp_ds_data struct
+        ds_data = struct.pack('<i', key_size // 32 - 1)
+        ds_data = ds_data + iv
+        ds_data = ds_data + c
 
-        # Add ciphertext to the binary
-        output_file_data[CIPHERTEXT_OFFSET: CIPHERTEXT_OFFSET + len(c)] = c
-        metadata = metadata + struct.pack('<IH',
-                                          zlib.crc32(c, 0xffffffff),
-                                          len(c))
-        # Align to 32 bit
-        metadata = metadata + b'\x00' * 2
+        ds_data_tlv = prepare_tlv(tlv_type_t.DS_DATA, ds_data, len(ds_data))
+        print('length of ds_data tlv is {}'.format(len(ds_data_tlv)))
+        output_file_data[cur_offset: cur_offset
+                         + len(ds_data_tlv)] = ds_data_tlv
+        cur_offset = cur_offset + len(ds_data_tlv)
 
-        # Add iv to the binary
-        output_file_data[IV_OFFSET: IV_OFFSET + len(iv)] = iv
-        metadata = metadata + struct.pack('<IH',
-                                          zlib.crc32(iv, 0xffffffff),
-                                          len(iv))
-        metadata = metadata + struct.pack('<H', key_size)
-        metadata = metadata + struct.pack('<B', hmac_key_id)
-        # Align to 32 bit
-        metadata = metadata + b'\x00' * 3
-        metadata = metadata + struct.pack('<I', 0x12345678)
+        # create ds_context struct
+        print('key size = {}'.format(key_size))
+        ds_context = struct.pack('<I', 0)
+        ds_context = ds_context + struct.pack('<B', hmac_key_id)
+        # Add padding to match the compiler
+        ds_context = ds_context + struct.pack('<B', 0)
+        ds_context = ds_context + struct.pack('<H', key_size)
 
-        # Add metadata to the binary
-        output_file_data[METADATA_OFFSET: METADATA_OFFSET + 64] = b'\x00' * 64
-        output_file_data[METADATA_OFFSET: METADATA_OFFSET
-                         + len(metadata)] = metadata
+        ds_context_tlv = prepare_tlv(tlv_type_t.DS_CONTEXT,
+                                     ds_context,
+                                     len(ds_context))
+        print('length of ds_data tlv is {}'.format(len(ds_context_tlv)))
+        output_file_data[cur_offset: cur_offset
+                         + len(ds_context_tlv)] = ds_context_tlv
+        cur_offset = cur_offset + len(ds_context_tlv)
         output_file.write(output_file_data)
         output_file.close()
 
@@ -271,57 +288,45 @@ def generate_cust_flash_partition_ds(c, iv, hmac_key_id, key_size,
 # @info
 #       This function generates the cust_flash partition of
 #       the encrypted private key parameters when DS is disabled.
-def generate_cust_flash_partition_no_ds(device_cert, ca_cert,
-                                        priv_key, priv_key_pass,
-                                        idf_target, op_file):
-    # Following offsets have been calculated with help
-    # of esp_secure_cert_config.h
-    METADATA_OFFSET = 0
-    DEV_CERT_OFFSET = METADATA_OFFSET + 64
-    CA_CERT_OFFSET = DEV_CERT_OFFSET + 2048
-    PRIV_KEY_OFFSET = CA_CERT_OFFSET + 4096
-
+def generate_cust_flash_partition_no_ds(device_cert, ca_cert, priv_key,
+                                        priv_key_pass, idf_target, op_file):
     # cust_flash partition is of size 0x6000 i.e. 24576
     with open(op_file, 'wb') as output_file:
-        output_file_data = bytearray(b'\xff' * 24576)
-        metadata = b'\x00'
+        if idf_target == 'esp32':
+            partition_size = 0x3000
+        else:
+            partition_size = 0x6000
+        output_file_data = bytearray(b'\xff' * partition_size)
+        cur_offset = 0
         with open(device_cert, 'rb') as cli_cert:
+            cur_offset = 0
             dev_cert = cli_cert.read()
-            # Write device cert at specific address
+            # Null terminate the dev_cert.
+            print('dev cert')
             dev_cert = dev_cert + b'\0'
-            output_file_data[DEV_CERT_OFFSET: DEV_CERT_OFFSET
-                             + len(dev_cert)] = dev_cert
-            # The following line packs the dev_cert_crc and dev_cet_len
-            # into the metadata in little endian format
-            # The value `0xffffffff` corresponds to the starting value
-            # used at the time of calculation
-            metadata = struct.pack('<IH',
-                                   zlib.crc32(dev_cert, 0xffffffff),
-                                   len(dev_cert))
-            # Align to 32 bit, this is done to match
-            # the same operation done by the compiler
-            metadata = metadata + b'\x00' * 2
+            dev_cert_tlv = prepare_tlv(tlv_type_t.DEV_CERT,
+                                       dev_cert,
+                                       len(dev_cert))
+            print('length of tlv is {}'.format(len(dev_cert_tlv)))
+            output_file_data[cur_offset: cur_offset
+                             + len(dev_cert_tlv)] = dev_cert_tlv
+            cur_offset = cur_offset + len(dev_cert_tlv)
 
         if ca_cert is not None:
             with open(ca_cert, 'rb') as ca_cert:
                 ca_cert = ca_cert.read()
                 # Write ca cert at specific address
                 ca_cert = ca_cert + b'\0'
-                output_file_data[CA_CERT_OFFSET: CA_CERT_OFFSET
-                                 + len(ca_cert)] = ca_cert
-                metadata = metadata
-                + struct.pack('<IH',
-                              zlib.crc32(ca_cert, 0xffffffff),
-                              len(ca_cert))
-        else:
-            output_file_data[CA_CERT_OFFSET: CA_CERT_OFFSET] = b'\x00'
-            metadata = metadata + struct.pack('<IH', 0, 0)
-
-        # Align to 32 bit
-        metadata = metadata + b'\x00' * 2
+                print('ca cert')
+                ca_cert_tlv = prepare_tlv(tlv_type_t.CA_CERT,
+                                          ca_cert,
+                                          len(ca_cert))
+                print('length of tlv is {}'.format(len(ca_cert_tlv)))
+                output_file_data[cur_offset: cur_offset
+                                 + len(ca_cert_tlv)] = ca_cert_tlv
+                cur_offset = cur_offset + len(ca_cert_tlv)
 
         private_key = load_privatekey(priv_key, priv_key_pass)
-
         private_key_pem = private_key.private_bytes(
             encoding=serialization.Encoding.PEM,
             format=serialization.PrivateFormat.TraditionalOpenSSL,
@@ -329,22 +334,14 @@ def generate_cust_flash_partition_no_ds(device_cert, ca_cert,
 
         # Write private key at specific address
         private_key_pem = private_key_pem + b'\0'
-        output_file_data[PRIV_KEY_OFFSET: PRIV_KEY_OFFSET
-                         + len(private_key_pem)] = private_key_pem
-        metadata = metadata
-        + struct.pack('<IH',
-                      zlib.crc32(private_key_pem, 0xffffffff),
-                      len(private_key_pem))
-        # Align to 32 bit, this is done to match the
-        # same operation done by the compiler
-        metadata = metadata + b'\x00' * 2
+        print('priv key')
+        priv_key_tlv = prepare_tlv(tlv_type_t.PRIV_KEY,
+                                   private_key_pem,
+                                   len(private_key_pem))
+        print('length of tlv is {}'.format(len(priv_key_tlv)))
+        output_file_data[cur_offset: cur_offset
+                         + len(priv_key_tlv)] = priv_key_tlv
 
-        metadata = metadata + struct.pack('<I', 0x12345678)
-
-        # Add metadata to the binary
-        output_file_data[METADATA_OFFSET: METADATA_OFFSET + 64] = b'\x00' * 64
-        output_file_data[METADATA_OFFSET: METADATA_OFFSET
-                         + len(metadata)] = metadata
         output_file.write(output_file_data)
         output_file.close()
 
@@ -598,10 +595,10 @@ def main():
     parser.add_argument(
         '--target_chip',
         dest='target_chip', type=str,
-        choices={'esp32s2', 'esp32s3', 'esp32c3'},
+        choices={'esp32', 'esp32s2', 'esp32s3', 'esp32c3'},
         default='esp32c3',
         metavar='target chip',
-        help='The target chip e.g. esp32s2, s3, c3')
+        help='The target chip e.g. esp32s2, esp32s3')
 
     parser.add_argument(
         '--summary',
