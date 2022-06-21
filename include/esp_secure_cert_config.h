@@ -35,7 +35,7 @@
 #define ESP_SECURE_CERT_PARTITION_TYPE          0x3F        /* Custom partition type */
 #define ESP_SECURE_CERT_PARTITION_NAME          CONFIG_ESP_SECURE_CERT_PARTITION_NAME  /* Name of the custom esp_secure_cert partition */
 #define ESP_SECURE_CERT_MAGIC                   0xFEEDBABE
-#define ESP_SECURE_CERT_PARTITION_SIZE          0x4000
+#define ESP_SECURE_CERT_PARTITION_SIZE          CONFIG_ESP_SECURE_CERT_PARTITION_SIZE
 #define ESP_SECURE_CERT_DATA_OFFSET             0
 
 /* secure cert partition is of 12 KB size out of which 6-7 KB are utilized stored parameters, the additional space is reserved for future use */
