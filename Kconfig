@@ -19,7 +19,15 @@ menu "ESP Secure Cert Manager"
         string "Name of the secure cert partition"
         default "esp_secure_cert"
         help
-            The name of the secure_cert_partition. Should match the pre-provisioned partition.
+            The name of the secure_cert_partition. Should match the name in the partition table.
+            This should be not be changed from the default value unless requied.
+
+    config ESP_SECURE_CERT_PARTITION_SIZE
+        hex "Size of the secure cert partition"
+        default 0x3000 if IDF_TARGET_ESP32
+        default 0x6000 if !IDF_TARGET_ESP32
+        help
+            Size of the secure_cert_partition. Should match the name in the partition table.
             This should be not be changed from the default value unless requied.
 
     config ESP_SECURE_CERT_KEYS_PARTITION_NAME
@@ -36,5 +44,7 @@ menu "ESP Secure Cert Manager"
         depends on !IDF_TARGET_ESP32
         help
             Enable the DS peripheral support. Not supported on esp32.
+
+
 
 endmenu # ESP Secure Cert Manager
