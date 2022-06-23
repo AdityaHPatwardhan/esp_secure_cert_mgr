@@ -232,14 +232,27 @@ void app_main()
     } else {
         ESP_LOGE(TAG, "Failed to obtain the ds context");
     }
-
+#define COPY_DS_DATA_TO_HEAP 0
+#if COPY_DS_DATA_TO_HEAP
+    esp_ds_data_ctx_t *ds_ctx_new = NULL;
+    ds_ctx_new = (esp_ds_data_ctx_t *) calloc(1, sizeof(esp_ds_data_ctx_t));
+    memcpy(ds_ctx_new, ds_data, sizeof(esp_ds_data_ctx_t));
+    esp_ds_data_t *ds_data_new = NULL;
+    ds_data_new = (esp_ds_data_t*) calloc(1, sizeof(esp_ds_data_t));
+    memcpy(ds_data_new, ds_data->esp_ds_data, sizeof(esp_ds_data_t));
+    ds_ctx_new->esp_ds_data = ds_data_new;
+#endif
     /* Read the dev_cert addr again */
     esp_ret = esp_secure_cert_get_dev_cert_addr(&addr, &len);
     if (esp_ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to obtain the dev cert flash address");
     }
 
+#if COPY_DS_DATA_TO_HEAP
+    esp_ret = test_ciphertext_validity(ds_ctx_new, (unsigned char *)addr, len);
+#else
     esp_ret = test_ciphertext_validity(ds_data, (unsigned char *)addr, len);
+#endif
     if (esp_ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to validate ciphertext");
     } else {
