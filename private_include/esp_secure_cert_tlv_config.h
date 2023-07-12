@@ -88,8 +88,9 @@ typedef struct esp_secure_cert_tlv_header {
     uint32_t magic;
     uint8_t flags;                      /* flags byte that identifies different characteristics for the TLV */
     uint8_t reserved[3];                /* Reserved bytes for future use, the value currently should be 0x0 */
-    uint16_t type;                      /* Type of tlv structure, this shall be typecasted
+    uint8_t type;                       /* Type of tlv structure, this shall be typecasted
                                            to esp_secure_cert_tlv_type_t for further use */
+    uint8_t subtype;                    /* Subtype of TLV structure, this acts as an index for the type */
     uint16_t length;                    /* Length of the data */
     uint8_t value[0];                   /* Actual data in form of byte array */
 } __attribute__((packed)) esp_secure_cert_tlv_header_t;

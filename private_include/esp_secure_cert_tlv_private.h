@@ -34,7 +34,7 @@ const void *esp_secure_cert_get_mapped_addr(void);
  * tlv_address              Void pointer to store tlv address
  *
  */
-esp_err_t esp_secure_cert_find_tlv(const void *esp_secure_cert_addr, esp_secure_cert_tlv_type_t type, void **tlv_address);
+esp_err_t esp_secure_cert_find_tlv(const void *esp_secure_cert_addr, esp_secure_cert_tlv_type_t type, uint8_t subtype, void **tlv_address);
 
 /*
  *  Get the flash address of a structure
@@ -51,7 +51,7 @@ esp_err_t esp_secure_cert_find_tlv(const void *esp_secure_cert_addr, esp_secure_
  *      - ESP_FAIL/other relevant esp error code
  *                  On failure
  */
-esp_err_t esp_secure_cert_tlv_get_addr(esp_secure_cert_tlv_type_t type, char **buffer, uint32_t *len);
+esp_err_t esp_secure_cert_tlv_get_addr(esp_secure_cert_tlv_type_t type, uint8_t subtype, char **buffer, uint32_t *len);
 
 /*
  * Identify if esp_secure_cert partition of type TLV is present.
