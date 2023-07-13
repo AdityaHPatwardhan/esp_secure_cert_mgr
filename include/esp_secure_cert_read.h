@@ -6,6 +6,7 @@
 #pragma once
 #include "esp_err.h"
 
+#include "esp_secure_cert_tlv_config.h"
 #include "soc/soc_caps.h"
 #ifdef CONFIG_ESP_SECURE_CERT_DS_PERIPHERAL
 #include "rsa_sign_alt.h"
@@ -36,6 +37,23 @@ typedef enum key_type {
  *                  On failure
  */
 esp_err_t esp_secure_cert_init_nvs_partition(void);
+
+/*
+ *  Get the flash address of a structure
+ *
+ * Note: This API also validates the crc of the respective tlv before returning the offset
+ * @input
+ *                          for calculating current crc for esp_secure_cert
+ *
+ * tlv_address              Void pointer to store tlv address
+ *
+ * Note: If tlv type = ESP_SECURE_CERT_TLV_END then the address returned shall be the end address of current tlv formatted data.
+ * @return
+ *      - ESP_OK    On success
+ *      - ESP_FAIL/other relevant esp error code
+ *                  On failure
+ */
+esp_err_t esp_secure_cert_tlv_get_addr(esp_secure_cert_tlv_type_t type, uint8_t subtype, char **buffer, uint32_t *len);
 
 /* @info
  *  Get the device cert from the esp_secure_cert partition
