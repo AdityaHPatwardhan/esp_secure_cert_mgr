@@ -1,3 +1,4 @@
+import os
 from typing import Dict
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.backends import default_backend
@@ -124,3 +125,39 @@ def load_certificate(cert_file_path: str) -> Dict[str, str]:
     except ValueError:
         raise ValueError("Unsupported certificate encoding format,"
                          "Please provide PEM or DER encoded certificate")
+
+
+def validate_csv_data(csv_data):
+    from . import tlv_format
+    for row in csv_data:
+        tlv_type = tlv_format.tlv_type_t.__members__.get(row['tlv_type'])
+        if tlv_type is None:
+            raise ValueError(f'{row["tlv_type"]} is not a valid TLV type')
+
+        tlv_subtype = int(row['tlv_subtype'], 10)
+        if (tlv_subtype >= 256):
+            raise ValueError(f'TLV subtype: {tlv_subtype} cannot exceed 256')
+        elif (tlv_subtype < 0):
+            raise ValueError(f'TLV subtype: {tlv_subtype} cannot be negative')
+
+        content_type = row['content_type']
+        supported_ext = {'.bin', '.pem', '.der', '.crt', '.key'}
+        supported_encoding = {'base64', 'string', 'hex2bin'}
+        if content_type == 'file':
+            key_file_name, ext = os.path.splitext(row['value'])
+            if ext not in supported_ext:
+                raise ValueError('The given file type'
+                                 f' is not supported: {row["value"]}')
+
+        elif content_type == 'data':
+            if row['content_encoding'] not in supported_encoding:
+                raise ValueError('The given encoding '
+                                 f'{row["content_encoding"]} is not supported')
+
+            if row['content_encoding'] == 'hex2bin':
+                value = row['value'].strip()
+                if len(value) % 2 != 0:
+                    raise ValueError('Invalid data length.'
+                                     ' Should be multiple of 2.')
+        else:
+            raise ValueError(f'Content type {content_type} is not supported')

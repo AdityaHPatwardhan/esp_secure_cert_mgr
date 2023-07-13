@@ -1,3 +1,4 @@
+import binascii
 import enum
 import struct
 import zlib
@@ -6,6 +7,8 @@ from esp_secure_cert.esp_secure_cert_helper import (
         load_certificate
 )
 from cryptography.hazmat.primitives import serialization
+
+tlv_type_subtype_set = set()
 
 
 class tlv_type_t(enum.IntEnum):
@@ -74,7 +77,10 @@ def _get_tlv_header_key_info_byte(key_type):
     return hex(flags)
 
 
-def prepare_tlv(tlv_type, tlv_type_info, data, data_len):
+def prepare_tlv(tlv_type, tlv_subtype, tlv_type_info, data, data_len):
+    check_tlv_uniqueness(tlv_type, tlv_subtype)
+    tlv_type_subtype_set.add((tlv_type, tlv_subtype))
+
     # Add the magic at start ( unsigned int )
     tlv_header = struct.pack('<I', 0xBA5EBA11)
     # Reserved bytes in TLV header ( 4 bytes)
@@ -83,13 +89,14 @@ def prepare_tlv(tlv_type, tlv_type_info, data, data_len):
         reserved_bytes = '000000'
         tlv_header_bytes = reserved_bytes + key_info_byte[2:]
         tlv_header_bytes = int(tlv_header_bytes, 16)
-        print(f'tlv header bytes = {tlv_header_bytes}')
+        print(f'TLV header flag bytes = {tlv_header_bytes}')
         tlv_header = tlv_header + struct.pack('<I', tlv_header_bytes)
     else:
         tlv_header = tlv_header + struct.pack('<I', 0x00000000)
 
     # Add the tlv type ( unsigned short )
-    tlv_header = tlv_header + struct.pack('<H', tlv_type)
+    tlv_header = tlv_header + struct.pack('<B', tlv_type)
+    tlv_header = tlv_header + struct.pack('<B', tlv_subtype)
     # Add the data_length ( unsigned short )
     tlv_header = tlv_header + struct.pack('<H', data_len)
     tlv = tlv_header + data
@@ -122,6 +129,7 @@ def generate_partition_rsa_ds(ciphertext, iv, efuse_key_id, rsa_key_len,
         else:
             dev_cert = dev_cert_data["bytes"]
         dev_cert_tlv = prepare_tlv(tlv_type_t.DEV_CERT,
+                                   0,
                                    None,
                                    dev_cert,
                                    len(dev_cert))
@@ -139,6 +147,7 @@ def generate_partition_rsa_ds(ciphertext, iv, efuse_key_id, rsa_key_len,
             else:
                 ca_cert = ca_cert_data["bytes"]
             ca_cert_tlv = prepare_tlv(tlv_type_t.CA_CERT,
+                                      0,
                                       None,
                                       ca_cert,
                                       len(ca_cert))
@@ -154,7 +163,7 @@ def generate_partition_rsa_ds(ciphertext, iv, efuse_key_id, rsa_key_len,
         ds_data = ds_data + iv
         ds_data = ds_data + ciphertext
 
-        ds_data_tlv = prepare_tlv(tlv_type_t.DS_DATA, None,
+        ds_data_tlv = prepare_tlv(tlv_type_t.DS_DATA, 0, None,
                                   ds_data, len(ds_data))
         output_file_data[cur_offset: cur_offset
                          + len(ds_data_tlv)] = ds_data_tlv
@@ -170,6 +179,7 @@ def generate_partition_rsa_ds(ciphertext, iv, efuse_key_id, rsa_key_len,
         ds_context = ds_context + struct.pack('<H', rsa_key_len)
 
         ds_context_tlv = prepare_tlv(tlv_type_t.DS_CONTEXT,
+                                     0,
                                      None,
                                      ds_context,
                                      len(ds_context))
@@ -198,6 +208,7 @@ def generate_partition_ecdsa(efuse_key_id, device_cert, ca_cert, op_file):
         else:
             dev_cert = dev_cert_data["bytes"]
         dev_cert_tlv = prepare_tlv(tlv_type_t.DEV_CERT,
+                                   0,
                                    None,
                                    dev_cert,
                                    len(dev_cert))
@@ -215,6 +226,7 @@ def generate_partition_ecdsa(efuse_key_id, device_cert, ca_cert, op_file):
             else:
                 ca_cert = ca_cert_data["bytes"]
             ca_cert_tlv = prepare_tlv(tlv_type_t.CA_CERT,
+                                      0,
                                       None,
                                       ca_cert,
                                       len(ca_cert))
@@ -228,6 +240,7 @@ def generate_partition_ecdsa(efuse_key_id, device_cert, ca_cert, op_file):
         # Prepare priv key dummy tlv
         priv_key = bytearray()
         priv_key_tlv = prepare_tlv(tlv_type_t.PRIV_KEY,
+                                   0,
                                    tlv_priv_key_type_t.ESP_SECURE_CERT_ECDSA_PERIPHERAL_KEY,  # type: ignore # noqa: E501
                                    priv_key,
                                    len(priv_key))
@@ -242,6 +255,7 @@ def generate_partition_ecdsa(efuse_key_id, device_cert, ca_cert, op_file):
         sec_cfg = struct.pack('<B', efuse_block_id) + b'\0' * 39
         print(f'length of sec_cfg struct = {len(sec_cfg)}')
         sec_cfg_tlv = prepare_tlv(tlv_type_t.SEC_CFG,
+                                  0,
                                   None,
                                   sec_cfg,
                                   len(sec_cfg))
@@ -261,7 +275,7 @@ def generate_partition_ecdsa(efuse_key_id, device_cert, ca_cert, op_file):
 #       This function generates the cust_flash partition of
 #       the encrypted private key parameters when DS is enabled.
 def generate_partition_ds(priv_key: tlv_priv_key_t,
-                          device_cert, ca_cert, idf_target,
+                          device_cert, ca_cert, idf_target, csv_data,
                           op_file):
     if (priv_key.key_type == tlv_priv_key_type_t.ESP_SECURE_CERT_RSA_DS_PERIPHERAL_KEY):  # type: ignore # noqa: E501
         if (priv_key.priv_key_len <= 0 or
@@ -293,11 +307,59 @@ def generate_partition_ds(priv_key: tlv_priv_key_t,
         raise ValueError('Invalid key type')
 
 
+def check_tlv_uniqueness(tlv_type, tlv_subtype):
+
+    if (tlv_type, tlv_subtype) in tlv_type_subtype_set:
+        raise RuntimeError(f'ERROR: Same TLV type: {tlv_type.name}'
+                           ' and TLV subtype: {tlv_subtype} cannot be reused')
+
+
+def load_data_from_csv_entry(csv_entry):
+    tlv_type = tlv_type_t.__members__.get(csv_entry['tlv_type'])
+    tlv_data = None
+    value = csv_entry['value']
+    encoding = csv_entry['content_encoding']
+    content_type = csv_entry['content_type']
+
+    cert_types = {tlv_type.CA_CERT, tlv_type.DEV_CERT}
+    if tlv_type in cert_types or tlv_type == tlv_type_t.PRIV_KEY:
+        if content_type != 'file':
+            raise ValueError('Certificate/Key must be given in a file')
+
+        if tlv_type in cert_types:
+            data = load_certificate(value)
+        else:
+            data = load_private_key(value)
+
+        if data["encoding"] == serialization.Encoding.PEM.value:
+            tlv_data = data["bytes"] + b'\0'
+        else:
+            tlv_data = data["bytes"]
+        return tlv_data
+
+    else:
+        if content_type == 'file':
+            with open(value, 'rb') as ip_file:
+                tlv_data = ip_file.read()
+        elif content_type == 'data':
+            if encoding == 'hex2bin':
+                value = value.strip()
+                tlv_data = binascii.a2b_hex(value)
+            elif encoding == 'base64':
+                tlv_data = binascii.a2b_base64(value)
+            elif encoding == 'string':
+                if type(value) == bytes:
+                    tlv_data = value.decode()
+                tlv_data += '\0'
+
+        return tlv_data
+
+
 # @info
 #       This function generates the cust_flash partition of
 #       the encrypted private key parameters when DS is disabled.
 def generate_partition_no_ds(priv_key: tlv_priv_key_t,
-                             device_cert, ca_cert, idf_target,
+                             device_cert, ca_cert, idf_target, csv_data,
                              op_file):
     # cust_flash partition is of size 0x2000 i.e. 8192 bytes
     tlv_data_length = 0
@@ -313,6 +375,7 @@ def generate_partition_no_ds(priv_key: tlv_priv_key_t,
         else:
             dev_cert = dev_cert_data["bytes"]
         dev_cert_tlv = prepare_tlv(tlv_type_t.DEV_CERT,
+                                   0,
                                    None,
                                    dev_cert,
                                    len(dev_cert))
@@ -330,6 +393,7 @@ def generate_partition_no_ds(priv_key: tlv_priv_key_t,
             else:
                 ca_cert = ca_cert_data["bytes"]
             ca_cert_tlv = prepare_tlv(tlv_type_t.CA_CERT,
+                                      0,
                                       None,
                                       ca_cert,
                                       len(ca_cert))
@@ -351,6 +415,7 @@ def generate_partition_no_ds(priv_key: tlv_priv_key_t,
                 private_key = private_key_data["bytes"]
 
         priv_key_tlv = prepare_tlv(tlv_type_t.PRIV_KEY,
+                                   0,
                                    priv_key.key_type,
                                    private_key,
                                    len(private_key))
@@ -361,6 +426,22 @@ def generate_partition_no_ds(priv_key: tlv_priv_key_t,
 
         print('priv_key tlv: total length = {}'.format(len(priv_key_tlv)))
         tlv_data_length += len(priv_key_tlv)
+
+        if csv_data is not None:
+            for csv_entry in csv_data:
+                tlv_data = load_data_from_csv_entry(csv_entry)
+                tlv_type = tlv_type_t.__members__.get(csv_entry['tlv_type'])
+                tlv_subtype = int(csv_entry['tlv_subtype'], 10)
+                tlv = prepare_tlv(tlv_type,
+                                  tlv_subtype,
+                                  None,
+                                  tlv_data,
+                                  len(tlv_data))
+                print(f'TLV type: {tlv_type.name}, subtype: {tlv_subtype},'
+                      ' total length: {len(tlv_data)}')
+                output_file_data[cur_offset: cur_offset + len(tlv)] = tlv
+                cur_offset = cur_offset + len(tlv)
+                tlv_data_length += len(tlv)
 
         print('Total length of tlv data = {}'.format(tlv_data_length))
         output_file.write(output_file_data)

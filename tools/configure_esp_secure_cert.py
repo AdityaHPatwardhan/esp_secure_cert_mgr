@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: 2020-2022 Espressif Systems (Shanghai) CO LTD
 # SPDX-License-Identifier: Apache-2.0
 import argparse
+import csv
 import os
 import subprocess
 import sys
@@ -9,8 +10,9 @@ from esp_secure_cert import nvs_format, custflash_format
 from esp_secure_cert import configure_ds, tlv_format
 from esp_secure_cert.efuse_helper import (
     log_efuse_summary,
-    configure_efuse_key_block
+    configure_efuse_key_block,
 )
+from esp_secure_cert.esp_secure_cert_helper import validate_csv_data
 
 idf_path = os.getenv('IDF_PATH')
 if not idf_path or not os.path.exists(idf_path):
@@ -187,7 +189,23 @@ def main():
         nargs=2, required=True,
         metavar='[sign algorithm, key size]')
 
+    parser.add_argument(
+        '--csv_file',
+        help='The CSV file containing data to be put into the'
+             'esp_secure_cert partition',
+        dest='input_csv_file',
+        metavar='[CSV file]')
+
     args = parser.parse_args()
+
+    csv_data = None
+    if args.input_csv_file:
+        with open(args.input_csv_file, 'rt', encoding='utf8') as csv_file:
+            csv_data = list(csv.DictReader(filter(lambda row: row[0] != '#',
+                                           csv_file), delimiter=',',
+                                           skipinitialspace=True))
+            validate_csv_data(csv_data)
+            print('CSV file is valid')
 
     idf_target = args.target_chip
     if idf_target not in supported_targets:
@@ -328,7 +346,7 @@ def main():
 
                 tlv_format.generate_partition_ds(tlv_priv_key,
                                                  args.device_cert,
-                                                 ca_cert, idf_target,
+                                                 ca_cert, idf_target, csv_data,
                                                  bin_filename)
             if args.priv_key_algo[0] == 'ECDSA':
                 tlv_priv_key.key_type = tlv_format.tlv_priv_key_type_t.ESP_SECURE_CERT_ECDSA_PERIPHERAL_KEY  # type: ignore # noqa: E501
@@ -339,11 +357,12 @@ def main():
                 tlv_format.generate_partition_ds(tlv_priv_key,
                                                  args.device_cert,
                                                  ca_cert, idf_target,
+                                                 csv_data,
                                                  bin_filename)
         else:
             tlv_format.generate_partition_no_ds(tlv_priv_key,
                                                 args.device_cert,
-                                                ca_cert, idf_target,
+                                                ca_cert, idf_target, csv_data,
                                                 bin_filename)
     elif args.sec_cert_type == 'cust_flash':
         if args.configure_ds is not False:
