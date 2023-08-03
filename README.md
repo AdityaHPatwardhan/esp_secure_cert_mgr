@@ -1,5 +1,6 @@
 # ESP Secure Certificate Manager
 Change added
+Change 2
 The *esp_secure_cert_mgr* provides a simplified interface to access the PKI credentials of a device pre-provisioned with the
 Espressif Provisioning Service. It provides the set of APIs that are required to access the contents of
 the `esp_secure_cert` partition.
